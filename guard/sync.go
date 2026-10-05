@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,12 @@ func (s *Syncer) Once(ctx context.Context) bool {
 				log.Printf("sync: install %s: %v", b, err)
 				mb = append(mb, b)
 			}
+		}
+	}
+	for _, f := range s.cfg.RequiredFiles {
+		if _, err := os.Stat(f); err != nil {
+			log.Printf("sync: required file missing: %s", f)
+			mb = append(mb, "file:"+f)
 		}
 	}
 	have, err := s.lem.Downloaded(ctx)

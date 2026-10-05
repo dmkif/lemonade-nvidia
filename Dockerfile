@@ -16,6 +16,9 @@ RUN go vet ./... && go test -count=1 ./... \
 # (4.2 GB), the DiT (4.2 GB) and the text encoder resident. On an 11 GB card every sung generation
 # then fails ("synth job ... failed"); instrumental works. The wrapper drops the flag so each stage
 # frees its memory. Select it with acestep.vulkan_bin in Lemonade's config.json.
+# fetch-acestep.sh: with acestep.vulkan_bin set Lemonade reports the backend as installed and never
+# downloads the real binary, so a wiped model volume would leave music broken; run it from an init
+# container: fetch-acestep.sh /opt/lemonade/.cache/lemonade.
 FROM ghcr.io/lemonade-sdk/lemonade-server:v2026.40.0@sha256:7a2822a677bd84665683b19629dd8ce44af45774431b62c09d107c2e856a7acc
 
 USER root
@@ -23,5 +26,6 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libegl1 libxext6 \
  && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 ace-server-lowvram.sh /opt/lemonade/ace-server-lowvram.sh
+COPY --chmod=0755 fetch-acestep.sh /opt/lemonade/fetch-acestep.sh
 COPY --from=guard --chmod=0755 /guard /opt/lemonade/guard
 USER 10001

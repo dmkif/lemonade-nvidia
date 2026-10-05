@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -549,5 +550,22 @@ func TestCountersExistFromStart(t *testing.T) {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("missing %q", want)
 		}
+	}
+}
+
+func TestRequiredFilesReportedMissing(t *testing.T) {
+	e := newEnv(t, ok200)
+	e.lem.downloaded = map[string]bool{}
+	f := t.TempDir() + "/ace-server"
+	e.g.cfg.RequiredFiles = []string{f}
+	s := &Syncer{cfg: e.g.cfg, lem: e.lem, arb: e.arb, m: e.g.m}
+	if s.Once(context.Background()) || len(s.Missing.Backends) != 1 {
+		t.Fatalf("missing file not reported: %v", s.Missing)
+	}
+	if err := os.WriteFile(f, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Once(context.Background()) {
+		t.Fatalf("still missing: %v", s.Missing)
 	}
 }
