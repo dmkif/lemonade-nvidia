@@ -503,3 +503,41 @@ func TestGPUChatWaitsForCPUVariantAndMusicDoesNot(t *testing.T) {
 		t.Fatalf("chat = %d", c)
 	}
 }
+
+func TestClientCancelIsNotABackendFailure(t *testing.T) {
+	hang := make(chan struct{})
+	e := newEnv(t, func(w http.ResponseWriter, r *http.Request) { <-hang })
+	defer close(hang)
+	e.lem.loaded = []Loaded{{Name: "qwen"}}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "POST", e.srv.URL+"/v1/chat/completions", strings.NewReader(`{"model":"qwen"}`))
+	if _, err := http.DefaultClient.Do(req); err == nil {
+		t.Fatal("expected client timeout")
+	}
+	time.Sleep(200 * time.Millisecond)
+	if len(e.lem.unloaded) != 0 {
+		t.Fatalf("client cancel unloaded models: %v", e.lem.unloaded)
+	}
+	b, _ := io.ReadAll(e.do("GET", "/metrics", "").Body)
+	if !strings.Contains(string(b), "guard_retries_total 0") {
+		t.Fatalf("retry counted:\n%s", b)
+	}
+}
+
+func TestStatusSyncCompleteFlag(t *testing.T) {
+	e := newEnv(t, ok200)
+	e.lem.downloaded = map[string]bool{"qwen": true}
+	e.g.cfg.SyncModels = []string{"qwen"}
+	s := &Syncer{cfg: e.g.cfg, lem: e.lem, arb: e.arb, m: e.g.m}
+	e.g.syncer = s
+	b, _ := io.ReadAll(e.do("GET", "/guard/status", "").Body)
+	if !strings.Contains(string(b), `"complete":false`) {
+		t.Fatalf("before first pass: %s", b)
+	}
+	s.Once(context.Background())
+	b, _ = io.ReadAll(e.do("GET", "/guard/status", "").Body)
+	if !strings.Contains(string(b), `"complete":true`) {
+		t.Fatalf("after pass: %s", b)
+	}
+}

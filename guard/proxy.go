@@ -171,6 +171,13 @@ func (g *Guard) serveAdmitted(w http.ResponseWriter, r *http.Request, body []byt
 func (g *Guard) forward(w http.ResponseWriter, r *http.Request, body []byte, label string) {
 	for attempt := 0; ; attempt++ {
 		resp, err := g.upstream(r.Context(), r.Method, r.URL.RequestURI(), r.Header, body)
+		if r.Context().Err() != nil { // client gave up: not a backend failure, do not unload anything
+			if err == nil {
+				resp.Body.Close()
+			}
+			g.m.request(label, 499)
+			return
+		}
 		if err == nil && resp.StatusCode < 500 || attempt >= g.cfg.Retry5xx || body == nil {
 			if err != nil {
 				g.m.request(label, 502)
@@ -253,7 +260,7 @@ func (g *Guard) status(w http.ResponseWriter, r *http.Request) {
 	}
 	st := map[string]any{"state": state, "loaded": g.arb.Snapshot(r.Context())}
 	if g.syncer != nil {
-		st["sync"] = map[string]any{"missing_backends": nz(g.syncer.Missing.Backends), "missing_models": nz(g.syncer.Missing.Models)}
+		st["sync"] = map[string]any{"complete": g.syncer.Complete(), "missing_backends": nz(g.syncer.Missing.Backends), "missing_models": nz(g.syncer.Missing.Models)}
 	}
 	writeJSON(w, 200, st)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -15,7 +16,14 @@ type Syncer struct {
 	m   *Metrics
 
 	Missing struct{ Backends, Models []string }
+
+	mu   sync.Mutex
+	done bool // at least one full pass found nothing missing
 }
+
+// Complete reports whether a pass has finished with everything present (before the first pass the
+// missing lists are empty but unknown).
+func (s *Syncer) Complete() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.done }
 
 // Once runs one pass and reports whether everything is present.
 func (s *Syncer) Once(ctx context.Context) bool {
@@ -52,7 +60,11 @@ func (s *Syncer) Once(ctx context.Context) bool {
 	}
 	s.Missing.Backends, s.Missing.Models = mb, mm
 	s.m.setMissing(len(mb) + len(mm))
-	return len(mb)+len(mm) == 0
+	ok := len(mb)+len(mm) == 0
+	s.mu.Lock()
+	s.done = ok
+	s.mu.Unlock()
+	return ok
 }
 
 // Run retries until complete, then warms the default model.
