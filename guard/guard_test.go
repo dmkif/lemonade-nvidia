@@ -413,3 +413,93 @@ func TestMetricsAndStatus(t *testing.T) {
 		t.Errorf("status %s", s)
 	}
 }
+
+func cpuCfg(e *env) {
+	mc := e.g.cfg.Models["qwen"]
+	mc.CPUFallback = &CPUFallback{Alias: "qwen-cpu", MaxPromptChars: 500}
+	e.g.cfg.Models["qwen"] = mc
+}
+
+// musicWithModelLog starts a blocked music job and records the model each chat request carries.
+func musicEnv(t *testing.T) (*env, chan struct{}, *atomic.Value) {
+	release := make(chan struct{})
+	var lastModel atomic.Value
+	e := newEnv(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/audio/generations" {
+			<-release
+		} else {
+			b, _ := io.ReadAll(r.Body)
+			lastModel.Store(modelOf(b))
+		}
+		io.WriteString(w, "ok")
+	})
+	cpuCfg(e)
+	e.g.cfg.MaxWait.Duration = 300 * time.Millisecond
+	go e.do("POST", "/v1/audio/generations", `{"model":"music"}`)
+	time.Sleep(100 * time.Millisecond)
+	return e, release, &lastModel
+}
+
+func TestCPUFallbackDuringMusic(t *testing.T) {
+	e, release, last := musicEnv(t)
+	defer close(release)
+	resp := e.do("POST", "/v1/chat/completions", `{"model":"qwen","messages":[{"role":"user","content":"hi"}]}`)
+	if resp.StatusCode != 200 || last.Load() != "qwen-cpu" {
+		t.Fatalf("code %d model %v", resp.StatusCode, last.Load())
+	}
+	b, _ := io.ReadAll(e.do("GET", "/metrics", "").Body)
+	if !strings.Contains(string(b), "guard_cpu_fallback_total 1") {
+		t.Fatalf("metric missing:\n%s", b)
+	}
+}
+
+func TestNoCPUFallbackForImageOrBigOrIdleGPU(t *testing.T) {
+	e, release, last := musicEnv(t)
+	for name, body := range map[string]string{
+		"image": `{"model":"qwen","messages":[{"content":[{"type":"image_url"}]}]}`,
+		"big":   `{"model":"qwen","x":"` + strings.Repeat("a", 600) + `"}`,
+	} {
+		if c := e.do("POST", "/v1/chat/completions", body).StatusCode; c != 503 {
+			t.Errorf("%s: want 503 wait limit, got %d", name, c)
+		}
+	}
+	close(release)
+	time.Sleep(100 * time.Millisecond)
+	// GPU free again: the original model is used
+	e.do("POST", "/v1/chat/completions", `{"model":"qwen"}`).Body.Close()
+	if last.Load() != "qwen" {
+		t.Fatalf("model after music = %v", last.Load())
+	}
+}
+
+func TestGPUChatWaitsForCPUVariantAndMusicDoesNot(t *testing.T) {
+	e := newEnv(t, ok200)
+	cpuCfg(e)
+	rel, err := e.arb.AcquireCPU() // CPU request in flight
+	if err != nil {
+		t.Fatal(err)
+	}
+	// music must start despite the CPU request
+	done := make(chan int, 1)
+	go func() { done <- e.do("POST", "/v1/audio/generations", `{"model":"music"}`).StatusCode }()
+	select {
+	case c := <-done:
+		if c != 200 {
+			t.Fatalf("music = %d", c)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("music blocked by CPU request")
+	}
+	// a GPU chat request waits until the CPU variant is done (shared llm slot)
+	chat := make(chan int, 1)
+	go func() { chat <- e.do("POST", "/v1/chat/completions", `{"model":"qwen"}`).StatusCode }()
+	select {
+	case <-chat:
+		t.Fatal("GPU chat ran while CPU variant in flight")
+	case <-time.After(300 * time.Millisecond):
+	}
+	rel()
+	if c := <-chat; c != 200 {
+		t.Fatalf("chat = %d", c)
+	}
+}

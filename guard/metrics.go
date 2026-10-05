@@ -14,6 +14,7 @@ type Metrics struct {
 	rejected  map[string]int
 	unloads   map[string]int
 	retries   int
+	cpuFB     int
 	leaks     int
 	waitSum   float64
 	waitCount int
@@ -37,6 +38,7 @@ func (m *Metrics) request(c string, code int) {
 func (m *Metrics) reject(r string)        { m.mu.Lock(); m.rejected[r]++; m.mu.Unlock() }
 func (m *Metrics) unload(r string)        { m.mu.Lock(); m.unloads[r]++; m.mu.Unlock() }
 func (m *Metrics) retry()                 { m.mu.Lock(); m.retries++; m.mu.Unlock() }
+func (m *Metrics) cpuFallback()           { m.mu.Lock(); m.cpuFB++; m.mu.Unlock() }
 func (m *Metrics) leak()                  { m.mu.Lock(); m.leaks++; m.mu.Unlock() }
 func (m *Metrics) setMissing(n int)       { m.mu.Lock(); m.missing = n; m.mu.Unlock() }
 func (m *Metrics) setVRAM(v int, ok bool) { m.mu.Lock(); m.vram, m.vramOK = v, ok; m.mu.Unlock() }
@@ -77,7 +79,7 @@ func (m *Metrics) Write(w io.Writer, loaded int) {
 	for _, k := range sortedKeys(m.unloads) {
 		fmt.Fprintf(w, "guard_unloads_total{reason=%q} %d\n", k, m.unloads[k])
 	}
-	fmt.Fprintf(w, "guard_retries_total %d\nguard_vram_leak_total %d\n", m.retries, m.leaks)
+	fmt.Fprintf(w, "guard_retries_total %d\nguard_vram_leak_total %d\nguard_cpu_fallback_total %d\n", m.retries, m.leaks, m.cpuFB)
 	fmt.Fprintf(w, "guard_queue_wait_seconds_sum %g\nguard_queue_wait_seconds_count %d\n", m.waitSum, m.waitCount)
 	if m.vramOK {
 		fmt.Fprintf(w, "guard_vram_used_mib %d\n", m.vram)

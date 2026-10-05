@@ -28,6 +28,7 @@ type Arbiter struct {
 	inflight     map[string]int
 	total        int
 	batchRunning bool
+	cpuInflight  int
 	lastUse      map[string]time.Time
 	draining     bool
 	wake         chan struct{}
@@ -54,6 +55,9 @@ func (a *Arbiter) Acquire(ctx context.Context, cls class, model string) (func(),
 			return nil, errDraining
 		}
 		ok := !a.batchRunning
+		if cls == classLLM {
+			ok = ok && a.cpuInflight == 0 // the CPU variant shares the llm slot
+		}
 		if cls == classBatch {
 			ok = ok && a.total == 0
 		}
@@ -92,6 +96,25 @@ func (a *Arbiter) Acquire(ctx context.Context, cls class, model string) (func(),
 		return nil, err
 	}
 	return release, nil
+}
+
+// BatchRunning reports whether a batch job currently owns the GPU.
+func (a *Arbiter) BatchRunning() bool { a.mu.Lock(); defer a.mu.Unlock(); return a.batchRunning }
+
+// AcquireCPU admits a CPU-fallback request: no GPU budget, does not block batch jobs.
+func (a *Arbiter) AcquireCPU() (func(), error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.draining {
+		return nil, errDraining
+	}
+	a.cpuInflight++
+	return func() {
+		a.mu.Lock()
+		a.cpuInflight--
+		a.broadcast()
+		a.mu.Unlock()
+	}, nil
 }
 
 func (a *Arbiter) resident(name string) int { return a.cfg.Models[name].ResidentMiB }

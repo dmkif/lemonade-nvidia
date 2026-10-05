@@ -21,10 +21,18 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 }
 
 type ModelCfg struct {
-	ResidentMiB int       `json:"resident_mib"` // VRAM while loaded and idle
-	PeakMiB     int       `json:"peak_mib"`     // VRAM while a request runs
-	Pinned      bool      `json:"pinned"`
-	IdleUnload  *Duration `json:"idle_unload"`
+	ResidentMiB int          `json:"resident_mib"` // VRAM while loaded and idle
+	PeakMiB     int          `json:"peak_mib"`     // VRAM while a request runs
+	Pinned      bool         `json:"pinned"`
+	IdleUnload  *Duration    `json:"idle_unload"`
+	CPUFallback *CPUFallback `json:"cpu_fallback"`
+}
+
+// CPUFallback: while a batch job owns the GPU, small text requests for this model are answered by a
+// CPU variant (Lemonade model Alias, llamacpp backend cpu) instead of waiting.
+type CPUFallback struct {
+	Alias          string `json:"alias"`
+	MaxPromptChars int    `json:"max_prompt_chars"`
 }
 
 type Config struct {

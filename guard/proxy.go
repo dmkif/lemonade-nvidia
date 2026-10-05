@@ -113,7 +113,42 @@ func modelOf(body []byte) string {
 	return b.Model
 }
 
+// cpuFallbackFor returns the fallback config when this request may run on the CPU variant now:
+// text-only, small, and the GPU is owned by a batch job.
+func (g *Guard) cpuFallbackFor(cls class, model string, body []byte) *CPUFallback {
+	fb := g.cfg.Models[model].CPUFallback
+	if cls != classLLM || fb == nil || fb.Alias == "" || !g.arb.BatchRunning() {
+		return nil
+	}
+	if (fb.MaxPromptChars > 0 && len(body) > fb.MaxPromptChars) ||
+		bytes.Contains(body, []byte("image_url")) || bytes.Contains(body, []byte("input_audio")) {
+		return nil
+	}
+	return fb
+}
+
+func rewriteModel(body []byte, alias string) []byte {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(body, &m) != nil {
+		return body
+	}
+	m["model"], _ = json.Marshal(alias)
+	b, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return b
+}
+
 func (g *Guard) serveAdmitted(w http.ResponseWriter, r *http.Request, body []byte, cls class) {
+	if fb := g.cpuFallbackFor(cls, modelOf(body), body); fb != nil {
+		if release, err := g.arb.AcquireCPU(); err == nil {
+			defer release()
+			g.m.cpuFallback()
+			g.forward(w, r, rewriteModel(body, fb.Alias), "llm_cpu")
+			return
+		}
+	}
 	actx, cancel := context.WithTimeout(r.Context(), g.cfg.MaxWait.Duration)
 	defer cancel()
 	release, err := g.arb.Acquire(actx, cls, modelOf(body))
