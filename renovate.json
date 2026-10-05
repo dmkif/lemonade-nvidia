@@ -4,6 +4,11 @@
   "packageRules": [
     {
       "matchDatasources": ["docker"],
+      "matchPackageNames": ["docker.io/library/golang"],
+      "groupName": "go builder"
+    },
+    {
+      "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/lemonade-sdk/lemonade-server"],
       "versioning": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
     }

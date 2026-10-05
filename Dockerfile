@@ -1,3 +1,11 @@
+# lemonade-guard (guard/): reverse proxy in front of Lemonade, see specs/008 in dmkif/k3s-gitops.
+# Tests run in the build: a failing `go vet` or `go test` fails the image build (also on pull requests).
+FROM docker.io/library/golang:1.26-bookworm@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d AS guard
+WORKDIR /src
+COPY guard/ .
+RUN go vet ./... && go test -count=1 ./... \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /guard .
+
 # Lemonade with the two libraries NVIDIA's Vulkan ICD needs inside the container.
 # The upstream image ships libvulkan1 and libX11 but not libEGL (libglvnd) or libXext;
 # without them the NVIDIA ICD fails with "Could not get 'vkCreateInstance'" and
@@ -15,4 +23,5 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libegl1 libxext6 \
  && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 ace-server-lowvram.sh /opt/lemonade/ace-server-lowvram.sh
+COPY --from=guard --chmod=0755 /guard /opt/lemonade/guard
 USER 10001
