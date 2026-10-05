@@ -36,19 +36,20 @@ type CPUFallback struct {
 }
 
 type Config struct {
-	Listen     string              `json:"listen"`
-	Upstream   string              `json:"upstream"`
-	BudgetMiB  int                 `json:"budget_mib"`
-	Models     map[string]ModelCfg `json:"models"`
-	IdleUnload Duration            `json:"idle_unload"`
-	MaxWait    Duration            `json:"max_wait"`
-	Retry5xx   int                 `json:"retry_on_5xx"`
-	WarmModel  string              `json:"warm_model"`
-	Backends   []string            `json:"backends"`
-	SyncModels []string            `json:"sync_models"`
-	LeakMiB    int                 `json:"leak_threshold_mib"`
-	LeakAfter  Duration            `json:"leak_after"`
-	DrainWait  Duration            `json:"drain_wait"`
+	Listen        string              `json:"listen"`
+	Upstream      string              `json:"upstream"`
+	BudgetMiB     int                 `json:"budget_mib"`
+	Models        map[string]ModelCfg `json:"models"`
+	IdleUnload    Duration            `json:"idle_unload"`
+	MaxWait       Duration            `json:"max_wait"`
+	Retry5xx      int                 `json:"retry_on_5xx"`
+	WarmModel     string              `json:"warm_model"`
+	Backends      []string            `json:"backends"`
+	SyncModels    []string            `json:"sync_models"`
+	RequiredFiles []string            `json:"required_files"` // must exist, else reported missing (no auto-fix)
+	LeakMiB       int                 `json:"leak_threshold_mib"`
+	LeakAfter     Duration            `json:"leak_after"`
+	DrainWait     Duration            `json:"drain_wait"`
 }
 
 func loadConfig(path string) (*Config, error) {
