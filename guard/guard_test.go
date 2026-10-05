@@ -380,13 +380,17 @@ func TestAsyncJob(t *testing.T) {
 	t.Fatal("job did not finish")
 }
 
-func TestDrainNeedsAdminAndRefusesNew(t *testing.T) {
+func TestDrainOnlyFromLoopbackAndRefusesNew(t *testing.T) {
 	e := newEnv(t, ok200)
-	if c := e.do("POST", "/guard/drain", "").StatusCode; c != 403 {
-		t.Fatalf("drain without admin = %d", c)
+	req := httptest.NewRequest("POST", "/guard/drain", nil)
+	req.RemoteAddr = "10.42.1.7:5555" // gateway pod
+	rec := httptest.NewRecorder()
+	e.g.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("drain from pod network = %d", rec.Code)
 	}
-	if c := e.do("POST", "/guard/drain", "", "Authorization", "Bearer admin").StatusCode; c != 200 {
-		t.Fatalf("drain = %d", c)
+	if c := e.do("POST", "/guard/drain", "").StatusCode; c != 200 { // test client is loopback
+		t.Fatalf("drain from loopback = %d", c)
 	}
 	resp := e.do("POST", "/v1/chat/completions", `{"model":"qwen"}`)
 	if resp.StatusCode != 503 || resp.Header.Get("Retry-After") != "60" {

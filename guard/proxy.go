@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -197,9 +197,15 @@ func streamCopy(w http.ResponseWriter, r io.Reader) {
 	}
 }
 
+// isAdmin: drain is only for callers inside the pod (preStop, kubectl exec / port-forward);
+// the gateway reaches the guard from another pod IP and cannot use it.
 func (g *Guard) isAdmin(r *http.Request) bool {
-	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return g.adminKey != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(g.adminKey)) == 1
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil || r.Header.Get("X-Forwarded-For") != "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (g *Guard) status(w http.ResponseWriter, r *http.Request) {
