@@ -17,10 +17,24 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "/etc/guard/guard.json", "config file")
+	drain := flag.Bool("drain", false, "ask the running guard on this pod to drain (preStop hook) and exit")
 	flag.Parse()
 	cfg, err := loadConfig(*cfgPath)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *drain {
+		port := cfg.Listen[strings.LastIndex(cfg.Listen, ":"):]
+		c := &http.Client{Timeout: cfg.DrainWait.Duration + 30*time.Second}
+		resp, err := c.Post("http://127.0.0.1"+port+"/guard/drain", "application/json", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			log.Fatalf("drain: %s", resp.Status)
+		}
+		return
 	}
 	adminKey := os.Getenv("LEMONADE_ADMIN_API_KEY")
 	if adminKey == "" {
