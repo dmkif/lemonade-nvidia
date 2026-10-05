@@ -541,3 +541,13 @@ func TestStatusSyncCompleteFlag(t *testing.T) {
 		t.Fatalf("after pass: %s", b)
 	}
 }
+
+func TestCountersExistFromStart(t *testing.T) {
+	e := newEnv(t, ok200)
+	b, _ := io.ReadAll(e.do("GET", "/metrics", "").Body)
+	for _, want := range []string{`guard_rejected_total{reason="wait_limit"} 0`, `guard_unloads_total{reason="idle"} 0`, "guard_vram_leak_total 0", "guard_sync_missing 0"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+}

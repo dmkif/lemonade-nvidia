@@ -26,8 +26,11 @@ type Metrics struct {
 }
 
 func NewMetrics() *Metrics {
-	return &Metrics{requests: map[string]int{}, rejected: map[string]int{}, unloads: map[string]int{},
-		jobSum: map[string]float64{}, jobCount: map[string]int{}}
+	// Reasons start at 0 so the series exist before the first event (increase() then sees the first one).
+	return &Metrics{requests: map[string]int{},
+		rejected: map[string]int{"forbidden": 0, "wait_limit": 0, "draining": 0},
+		unloads:  map[string]int{"budget": 0, "idle": 0, "retry": 0, "drain": 0},
+		jobSum:   map[string]float64{}, jobCount: map[string]int{}}
 }
 
 func (m *Metrics) request(c string, code int) {
